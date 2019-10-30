@@ -5,7 +5,17 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/wait.h>
+#include <unistd.h>
+#include <sstream>
+
+
 using namespace std;
+
+void execute (string);
+void execute(string, string);
+string trim (string);
+char** vec_to_char_array (vector<string>);
+
 string trim (string input){
     int i=0;
     while (i < input.size() && input [i] == ' ')
@@ -25,8 +35,6 @@ string trim (string input){
         return "";
     
     return input;
-    
-
 }
 
 vector<string> split (string line, string separator=" "){
@@ -67,35 +75,53 @@ char** vec_to_char_array (vector<string> parts){
 
 void execute (string command){
     vector<string> argstrings = split (command, " "); // split the command into space-separated parts
+//    argstrings.insert(argstrings.begin(), "-c");
+//    argstrings.insert(argstrings.begin(), "/bin/sh");
     char** args = vec_to_char_array (argstrings);// convert vec<string> into an array of char*
     execvp (args[0], args);
 }
 
 int main (){
+    cout << "Shell Started" << endl;
 
     while (true){ // repeat this loop until the user presses Ctrl + C
         string commandline = "";/*get from STDIN, e.g., "ls  -la |   grep Jul  | grep . | grep .cpp" */
+        getline(cin, commandline);
         // split the command by the "|", which tells you the pipe levels
         vector<string> tparts = split (commandline, "|");
-        
+
         // for each pipe, do the following:
         for (int i=0; i<tparts.size(); i++){
             // make pipe
-			if (!fork()){
+            int fd[2];
+            pipe(fd);
+            if (!fork()){
                 // redirect output to the next level
                 // unless this is the last level
                 if (i < tparts.size() - 1){
                     // redirect STDOUT to fd[1], so that it can write to the other side
-                    close (fd[1]);   // STDOUT already points fd[1], which can be closed
+                    dup2(fd[1],1);
                 }
-                //execute function that can split the command by spaces to 
+                close (fd[1]);   // STDOUT already points fd[1], which can be closed
+                //execute function that can split the command by spaces to
                 // find out all the arguments, see the definition
                 execute (tparts [i]); // this is where you execute
             }else{
-                wait(0);            // wait for the child process
-				// then do other redirects
+                wait(0);
+                dup2(fd[0], 0);
+                close(fd[0]);
+                
+                // then do other redirects
             }
         }
 
     }
 }
+
+///////////TESTER MAIN
+
+//int main(){
+//
+//    execute("ls > a.txt");
+//
+//}
