@@ -7,6 +7,9 @@
 #include <sys/wait.h>
 #include <unistd.h>
 #include <sstream>
+#include <fcntl.h>
+#include <sys/ipc.h>
+#include <sys/shm.h>
 
 using namespace std;
 
@@ -25,7 +28,7 @@ string trim (string input){
         return "";
     }
     
-    i = input.size() - 1;
+    i = int(input.size() - 1);
     while (i>=0 && input[i] == ' ')
         i--;
     if (i >= 0)
@@ -80,47 +83,90 @@ void execute (string command){
     execvp (args[0], args);
 }
 
-int main (){
-    cout << "Shell Started" << endl;
+void is_exit(string str){
+    if(str.find("exit", 0) <= str.length()){
+        exit(0);
+    }
+}
 
-    while (true){ // repeat this loop until the user presses Ctrl + C
-        string commandline = "";/*get from STDIN, e.g., "ls  -la |   grep Jul  | grep . | grep .cpp" */
+bool is_relative_path(string filename){
+    return false;
+}
+
+void cd(string command){
+    if(command.find("cd", 0) <= command.length()){
+        int pos = command.find("cd", 0);
+        string filename = command.substr(pos + 3);
+        if(is_relative_path(filename)){
+            cout << "need to implement \n";
+        }else{
+            chdir(filename.c_str());
+            cout << "error number " << errno << endl;
+        }
+    }
+}
+
+int main (){
+    while (true){
+        bool is_cd = false;
+        int in, out;
+        in = dup(0);
+        out = dup(1);
+        string commandline = "";
+        cout << "trevormoore: ";
         getline(cin, commandline);
-        // split the command by the "|", which tells you the pipe levels
+        is_exit(commandline);
+        cd(commandline);
         vector<string> tparts = split (commandline, "|");
 
         // for each pipe, do the following:
-        for (int i=0; i<tparts.size(); i++){
-            // make pipe
+        for (int i=0; i<tparts.size() && !is_cd; i++){
             int fd[2];
             pipe(fd);
             if (!fork()){
-                // redirect output to the next level
-                // unless this is the last level
-                if (i < tparts.size() - 1){
-                    // redirect STDOUT to fd[1], so that it can write to the other side
-                    dup2(fd[1],1);
+                string command = tparts[i];
+                if(i == 0 && command.find("<", 0) <= command.length()){
+                    int pos = int(command.find("<", 0));
+                    string filename = command.substr(pos + 1);
+                    filename = trim(filename);
+                    filename.erase(remove_if(filename.begin(), filename.end(), ::isspace), filename.end());
+                    command = command.substr(0, pos);
+                    
+                    int f = open(filename.c_str(), O_RDONLY);
+                    dup2(f, 0);
+                    close(f);
                 }
-                close (fd[1]);   // STDOUT already points fd[1], which can be closed
-                //execute function that can split the command by spaces to
-                // find out all the arguments, see the definition
-                execute (tparts [i]); // this is where you execute
+                
+                if (i < tparts.size() - 1){
+                    dup2(fd[1],1);
+                    close (fd[1]);
+                }else if(i == tparts.size() - 1 && command.find(">", 0) <= command.length()){
+                    int pos = int(command.find(">", 0));
+                    string filename = command.substr(pos + 1);
+                    filename = trim(filename);
+                    filename.erase(remove_if(filename.begin(), filename.end(), ::isspace), filename.end());
+                    command = command.substr(0, pos);
+                    
+                    int f = open(filename.c_str(), O_CREAT | O_WRONLY | O_TRUNC);
+                    dup2(f, 1);
+                    close(f);
+                }else{
+                    dup2(out, 1);
+                }
+                
+                execute (command);
+                
             }else{
                 wait(0);
-                dup2(fd[0], 0);
-                close(fd[0]);
-                
-                // then do other redirects
+                if (i < tparts.size() - 1){
+                    dup2(fd[0],0);
+                }else{
+                    dup2(in, 0);
+                }
+                close(fd[1]);
+
             }
         }
 
     }
 }
-
-///////////TESTER MAIN
-
-//int main(){
-//
-//    execute("ls > a.txt");
-//
-//}
