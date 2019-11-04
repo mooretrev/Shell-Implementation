@@ -13,6 +13,8 @@
 
 using namespace std;
 
+void kill_all_background_children(vector<pid_t> processes);
+
 void execute (string);
 void execute(string, string);
 string trim (string);
@@ -40,9 +42,20 @@ string trim (string input){
 }
 
 vector<string> split (string line, string separator=" "){
+    size_t found;
+    size_t beginning = 0;
     vector<string> result;
     while (line.size()){
-        size_t found = line.find(separator);
+        if(line[0] == '\"'){
+            for(int i = 0; 0 < line.size(); ++i){
+                if(line[i] == '\"'){
+                    beginning = 1;
+                    found = i;
+                    break;
+                }
+            }
+        }
+        found = line.find(separator);
         if (found == string::npos){
             string lastpart = trim (line);
             if (lastpart.size()>0){
@@ -50,9 +63,14 @@ vector<string> split (string line, string separator=" "){
             }
             break;
         }
-        string segment = trim (line.substr(0, found));
+        string segment = trim (line.substr(beginning, found));
         //cout << "line: " << line << "found: " << found << endl;
-        line = line.substr (found+1);
+        if(beginning == 1){
+            line = line.substr (found+2);
+
+        }else{
+            line = line.substr (found+1);
+        }
 
         //cout << "[" << segment << "]"<< endl;
         if (segment.size() != 0) 
@@ -60,6 +78,9 @@ vector<string> split (string line, string separator=" "){
 
         
         //cout << line << endl;
+    }
+    for(int i = 0; i < result.size(); ++i){
+        cout << result.at(i) << endl;
     }
     return result;
 }
@@ -83,8 +104,9 @@ void execute (string command){
     execvp (args[0], args);
 }
 
-void is_exit(string str){
+void is_exit(string str, vector<pid_t> &background_process){
     if(str.find("exit", 0) <= str.length()){
+        kill_all_background_children(background_process);
         exit(0);
     }
 }
@@ -93,21 +115,55 @@ bool is_relative_path(string filename){
     return false;
 }
 
-void cd(string command){
+bool cd(string command){
     if(command.find("cd", 0) <= command.length()){
-        int pos = command.find("cd", 0);
+        int pos = int(command.find("cd", 0));
         string filename = command.substr(pos + 3);
-        if(is_relative_path(filename)){
-            cout << "need to implement \n";
-        }else{
-            chdir(filename.c_str());
-            cout << "error number " << errno << endl;
+        filename.erase(remove(filename.begin(), filename.end(), '\\'), filename.end());
+        chdir(filename.c_str());
+    
+        return true;
+    }
+    return false;
+}
+
+bool child_alive(pid_t pid){
+    int Stat;
+    if (waitpid(pid, &Stat, WNOHANG) == pid) {
+        if (WIFEXITED(Stat) || WIFSIGNALED(Stat)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool is_background(string command){
+    return command.find("&", 0) <= command.length();
+}
+
+void remove_amp(string &command){
+    command.erase(remove(command.begin(), command.end(), '&'), command.end());
+}
+
+void check_for_dead_children(vector<pid_t> processes){
+    for(int i = 0; i < processes.size(); ++i){
+        if(!child_alive(processes.at(i))){
+            waitpid(processes.at(i), nullptr, 0);
         }
     }
 }
 
+void kill_all_background_children(vector<pid_t> processes){
+    for(int i = 0; i < processes.size(); ++i){
+        waitpid(processes.at(i), nullptr, 0);
+    }
+}
+
+
 int main (){
+    vector<pid_t> background_proccess;
     while (true){
+        bool is_amp = false;
         bool is_cd = false;
         int in, out;
         in = dup(0);
@@ -115,15 +171,23 @@ int main (){
         string commandline = "";
         cout << "trevormoore: ";
         getline(cin, commandline);
-        is_exit(commandline);
-        cd(commandline);
+        is_exit(commandline, background_proccess);
+        is_cd = cd(commandline);
         vector<string> tparts = split (commandline, "|");
 
         // for each pipe, do the following:
         for (int i=0; i<tparts.size() && !is_cd; i++){
+            is_amp = false;
+
             int fd[2];
             pipe(fd);
-            if (!fork()){
+            if(is_background(tparts.at(i))){
+                is_amp = true;
+                remove_amp(tparts.at(i));
+            }
+            pid_t pid = fork();
+            if(is_amp && pid != 0) background_proccess.push_back(pid);
+            if (!   pid){
                 string command = tparts[i];
                 if(i == 0 && command.find("<", 0) <= command.length()){
                     int pos = int(command.find("<", 0));
@@ -157,7 +221,13 @@ int main (){
                 execute (command);
                 
             }else{
-                wait(0);
+                if(!is_amp){
+                    wait(0);
+                    check_for_dead_children(background_proccess);
+                }else{
+                    check_for_dead_children(background_proccess);
+                }
+                
                 if (i < tparts.size() - 1){
                     dup2(fd[0],0);
                 }else{
@@ -167,6 +237,5 @@ int main (){
 
             }
         }
-
     }
 }
