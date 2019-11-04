@@ -61,7 +61,6 @@ vector<string> split (string line, string separator=" "){
         
         //cout << line << endl;
     }
-    return result;
 }
 
 char** vec_to_char_array (vector<string> parts){
