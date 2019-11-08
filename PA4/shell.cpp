@@ -46,8 +46,9 @@ vector<string> split (string line, string separator=" "){
     size_t beginning = 0;
     vector<string> result;
     while (line.size()){
+        found = line.find(separator);
         if(line[0] == '\"'){
-            for(int i = 0; 0 < line.size(); ++i){
+            for(int i = 1; 0 < line.size(); ++i){
                 if(line[i] == '\"'){
                     beginning = 1;
                     found = i;
@@ -55,8 +56,7 @@ vector<string> split (string line, string separator=" "){
                 }
             }
         }
-        found = line.find(separator);
-        if (found == string::npos){
+        if (found >= string::npos){
             string lastpart = trim (line);
             if (lastpart.size()>0){
                 result.push_back(lastpart);
@@ -187,7 +187,7 @@ int main (){
             }
             pid_t pid = fork();
             if(is_amp && pid != 0) background_proccess.push_back(pid);
-            if (!   pid){
+            if (!pid){
                 string command = tparts[i];
                 if(i == 0 && command.find("<", 0) <= command.length()){
                     int pos = int(command.find("<", 0));
