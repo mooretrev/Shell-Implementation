@@ -10,8 +10,9 @@
 #include <fcntl.h>
 #include <sys/ipc.h>
 #include <sys/shm.h>
-
 using namespace std;
+
+int num_proccesses = 0;
 
 void kill_all_background_children(vector<pid_t> processes);
 
@@ -157,10 +158,15 @@ void remove_amp(string &command){
     command.erase(remove(command.begin(), command.end(), '&'), command.end());
 }
 
-void check_for_dead_children(vector<pid_t> processes){
+void check_for_dead_children(vector<pid_t>& processes, vector<string>& commands){
     for(int i = 0; i < processes.size(); ++i){
         if(!child_alive(processes.at(i))){
             waitpid(processes.at(i), nullptr, 0);
+            processes.erase(processes.begin() + i);
+            commands.erase(commands.begin() + i);
+            --num_proccesses;
+            
+            
         }
     }
 }
@@ -171,12 +177,29 @@ void kill_all_background_children(vector<pid_t> processes){
     }
 }
 
+bool jobs(string command, vector<pid_t>& bg_processes, vector<string>& bg_name){
+    check_for_dead_children(bg_processes, bg_name);
+    if(command == "jobs"){
+        for(int i = 0; i < bg_processes.size(); ++i){
+            if(num_proccesses > 0){
+                cout << "[" << bg_processes.at(i) << "]" << " " << bg_name.at(i) << endl;
+            }
+        }
+        return true;
+    }else{
+        return false;
+    }
+    
+}
+
 
 int main (){
     vector<pid_t> background_proccess;
+    vector<string> background_command_name;
     while (true){
         bool is_amp = false;
         bool is_cd = false;
+        bool is_jobs = false;
         int in, out;
         in = dup(0);
         out = dup(1);
@@ -185,10 +208,11 @@ int main (){
         getline(cin, commandline);
         is_exit(commandline, background_proccess);
         is_cd = cd(commandline);
+        is_jobs = jobs(commandline, background_proccess, background_command_name);
         vector<string> tparts = split (commandline, "|");
 
         // for each pipe, do the following:
-        for (int i=0; i<tparts.size() && !is_cd; i++){
+        for (int i=0; i<tparts.size() && !is_cd && !is_jobs; i++){
             is_amp = false;
 
             int fd[2];
@@ -196,6 +220,8 @@ int main (){
             if(is_background(tparts.at(i))){
                 is_amp = true;
                 remove_amp(tparts.at(i));
+                background_command_name.push_back(tparts.at(i));
+                ++num_proccesses;
             }
             pid_t pid = fork();
             if(is_amp && pid != 0) background_proccess.push_back(pid);
@@ -256,9 +282,9 @@ int main (){
             }else{
                 if(!is_amp){
                     wait(0);
-                    check_for_dead_children(background_proccess);
+                    check_for_dead_children(background_proccess, background_command_name);
                 }else{
-                    check_for_dead_children(background_proccess);
+                    check_for_dead_children(background_proccess, background_command_name);
                 }
                 
                 if (i < tparts.size() - 1){
