@@ -41,46 +41,52 @@ string trim (string input){
     return input;
 }
 
+void remove_quotes(string& command){
+    command.erase(remove(command.begin(), command.end(), '\''), command.end());
+    command.erase(remove(command.begin(), command.end(), '\"'), command.end());
+}
+
+
+bool in_quotes(string command, int pos_target){
+    int quote1 = command.find('\"');
+    int quote2 = command.find('\"', quote1+1);
+    int _quote1 = command.find('\'');
+    int _quote2 = command.find('\'', _quote1+1);
+    return (pos_target > quote1 && pos_target < quote2) || (pos_target > _quote1 && pos_target < _quote2);
+}
+
 vector<string> split (string line, string separator=" "){
-    size_t found;
-    size_t beginning = 0;
     vector<string> result;
+    int pos_start = 0;
     while (line.size()){
-        found = line.find(separator);
-        if(line[0] == '\"'){
-            for(int i = 1; 0 < line.size(); ++i){
-                if(line[i] == '\"'){
-                    beginning = 1;
-                    found = i;
-                    break;
-                }
-            }
-        }
-        if (found >= string::npos){
-            string lastpart = trim (line);
-            if (lastpart.size()>0){
-                result.push_back(lastpart);
-            }
-            break;
-        }
-        string segment = trim (line.substr(beginning, found));
-        //cout << "line: " << line << "found: " << found << endl;
-        if(beginning == 1){
-            line = line.substr (found+2);
-
-        }else{
-            line = line.substr (found+1);
-        }
-
-        //cout << "[" << segment << "]"<< endl;
-        if (segment.size() != 0) 
-            result.push_back (segment);
-
+        size_t found = line.find(separator, pos_start);
         
-        //cout << line << endl;
-    }
-    for(int i = 0; i < result.size(); ++i){
-        cout << result.at(i) << endl;
+
+        if(in_quotes(line, found)){
+            pos_start = found + 1;
+            
+        }
+        else{
+            
+            if (found == string::npos){
+                string lastpart = trim (line);
+                if (lastpart.size()>0){
+                    result.push_back(lastpart);
+                }
+                break;
+            }
+            string segment = trim (line.substr(0, found));
+            //cout << "line: " << line << "found: " << found << endl;
+            line = line.substr (found+1);
+        
+            //cout << "[" << segment << "]"<< endl;
+            if (segment.size() != 0)
+                result.push_back (segment);
+        
+        
+            //cout << line << endl;
+            pos_start = 0;
+        }
     }
     return result;
 }
@@ -98,6 +104,9 @@ char** vec_to_char_array (vector<string> parts){
 
 void execute (string command){
     vector<string> argstrings = split (command, " "); // split the command into space-separated parts
+    for(int i = 0; i < argstrings.size(); ++i){
+        remove_quotes(argstrings.at(i));
+    }
 //    argstrings.insert(argstrings.begin(), "-c");
 //    argstrings.insert(argstrings.begin(), "/bin/sh");
     char** args = vec_to_char_array (argstrings);// convert vec<string> into an array of char*
@@ -120,6 +129,9 @@ bool cd(string command){
         int pos = int(command.find("cd", 0));
         string filename = command.substr(pos + 3);
         filename.erase(remove(filename.begin(), filename.end(), '\\'), filename.end());
+        if(filename == "-"){
+            filename = "..";
+        }
         chdir(filename.c_str());
     
         return true;
@@ -189,33 +201,54 @@ int main (){
             if(is_amp && pid != 0) background_proccess.push_back(pid);
             if (!pid){
                 string command = tparts[i];
-                if(i == 0 && command.find("<", 0) <= command.length()){
-                    int pos = int(command.find("<", 0));
-                    string filename = command.substr(pos + 1);
-                    filename = trim(filename);
-                    filename.erase(remove_if(filename.begin(), filename.end(), ::isspace), filename.end());
-                    command = command.substr(0, pos);
+                if(i == 0 && command.find("<", 0) <= command.length() && command.find(">", 0) <= command.length() && !in_quotes(command, command.find("<", 0)) && !in_quotes(command, command.find(">", 0))){
+                    int input_pos = int(command.find("<", 0));
+                    int output_pos = int(command.find(">", 0));
+                    string input_filename = command.substr(input_pos + 1, output_pos - input_pos -1);
+                    input_filename.erase(remove_if(input_filename.begin(), input_filename.end(), ::isspace), input_filename.end());
                     
-                    int f = open(filename.c_str(), O_RDONLY);
+                    string output_filename = command.substr(output_pos + 1);
+                    output_filename.erase(remove_if(output_filename.begin(), output_filename.end(), ::isspace), output_filename.end());
+                    
+                    command = command.substr(0, input_pos);
+                    
+                    int f = open(input_filename.c_str(), O_RDONLY);
                     dup2(f, 0);
                     close(f);
-                }
-                
-                if (i < tparts.size() - 1){
-                    dup2(fd[1],1);
-                    close (fd[1]);
-                }else if(i == tparts.size() - 1 && command.find(">", 0) <= command.length()){
-                    int pos = int(command.find(">", 0));
-                    string filename = command.substr(pos + 1);
-                    filename = trim(filename);
-                    filename.erase(remove_if(filename.begin(), filename.end(), ::isspace), filename.end());
-                    command = command.substr(0, pos);
                     
-                    int f = open(filename.c_str(), O_CREAT | O_WRONLY | O_TRUNC);
-                    dup2(f, 1);
-                    close(f);
-                }else{
-                    dup2(out, 1);
+                    int f2 = open(output_filename.c_str(), O_CREAT | O_WRONLY | O_TRUNC);
+                    dup2(f2, 1);
+                    close(f2);
+                }
+                else{
+                    if(i == 0 && command.find("<", 0) <= command.length() && !in_quotes(command, command.find("<", 0))){
+                        int pos = int(command.find("<", 0));
+                        string filename = command.substr(pos + 1);
+                        filename = trim(filename);
+                        filename.erase(remove_if(filename.begin(), filename.end(), ::isspace), filename.end());
+                        command = command.substr(0, pos);
+                        
+                        int f = open(filename.c_str(), O_RDONLY);
+                        dup2(f, 0);
+                        close(f);
+                    }
+                    
+                    if (i < tparts.size() - 1){
+                        dup2(fd[1],1);
+                        close (fd[1]);
+                    }else if(i == tparts.size() - 1 && command.find(">", 0) <= command.length() && !in_quotes(command, command.find(">", 0))){
+                        int pos = int(command.find(">", 0));
+                        string filename = command.substr(pos + 1);
+                        filename = trim(filename);
+                        filename.erase(remove_if(filename.begin(), filename.end(), ::isspace), filename.end());
+                        command = command.substr(0, pos);
+                        
+                        int f = open(filename.c_str(), O_CREAT | O_WRONLY | O_TRUNC);
+                        dup2(f, 1);
+                        close(f);
+                    }else{
+                        dup2(out, 1);
+                    }
                 }
                 
                 execute (command);
