@@ -12,7 +12,6 @@
 #include <sys/shm.h>
 using namespace std;
 
-int num_proccesses = 0;
 
 void kill_all_background_children(vector<pid_t> processes);
 
@@ -164,7 +163,6 @@ void check_for_dead_children(vector<pid_t>& processes, vector<string>& commands)
             waitpid(processes.at(i), nullptr, 0);
             processes.erase(processes.begin() + i);
             commands.erase(commands.begin() + i);
-            --num_proccesses;
             
             
         }
@@ -181,9 +179,7 @@ bool jobs(string command, vector<pid_t>& bg_processes, vector<string>& bg_name){
     check_for_dead_children(bg_processes, bg_name);
     if(command == "jobs"){
         for(int i = 0; i < bg_processes.size(); ++i){
-            if(num_proccesses > 0){
-                cout << "[" << bg_processes.at(i) << "]" << " " << bg_name.at(i) << endl;
-            }
+            cout << "[" << bg_processes.at(i) << "]" << " " << bg_name.at(i) << endl;
         }
         return true;
     }else{
@@ -221,7 +217,6 @@ int main (){
                 is_amp = true;
                 remove_amp(tparts.at(i));
                 background_command_name.push_back(tparts.at(i));
-                ++num_proccesses;
             }
             pid_t pid = fork();
             if(is_amp && pid != 0) background_proccess.push_back(pid);
